@@ -4,14 +4,14 @@ import io.perfometer.dsl.HttpHeader
 import io.perfometer.dsl.HttpParam
 import io.perfometer.dsl.scenario
 import io.perfometer.http.client.SimpleHttpClient
-import io.perfometer.statistics.printer.StdOutStatisticsPrinter
 import io.perfometer.runner.DefaultScenarioRunner
+import io.perfometer.statistics.printer.StdOutStatisticsPrinter
 
 
 fun main() {
 
     DefaultScenarioRunner(SimpleHttpClient(true), StdOutStatisticsPrinter())
-            .run(scenario("flamingo-test.ext.e-point.pl", 443) {
+            .run(scenario("https", "flamingo-test.ext.e-point.pl", 443) {
                 get().path { "/rejestracja" }
                 get().path { "/rejestracja/static/css/2.1566cbe7.chunk.css" }
                 get().path { "/rejestracja/static/css/main.19c2a943.chunk.css" }
