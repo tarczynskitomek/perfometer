@@ -12,6 +12,7 @@ fun main() {
 
     DefaultScenarioRunner(SimpleHttpClient(true), StdOutStatisticsPrinter())
             .run(scenario("https", "flamingo-test.ext.e-point.pl", 443) {
+                basicAuth("user", "password")
                 get().path { "/rejestracja" }
                 get().path { "/rejestracja/static/css/2.1566cbe7.chunk.css" }
                 get().path { "/rejestracja/static/css/main.19c2a943.chunk.css" }
@@ -27,7 +28,6 @@ fun main() {
                 get().path { "/rejestracja/api/currentLimit" }
                 get().path { "/rejestracja/api/currentLimit" }
                         .header { HttpHeader("X-Perfometer", "true") }
-                        .header { HttpHeader("X-Perfometer", "false") }
                         .param { HttpParam("first", "aaa") }
                         .param { HttpParam("second", "bbb") }
 
