@@ -3,7 +3,6 @@ package io.perfometer.dsl
 import io.perfometer.http.HttpHeaders
 import io.perfometer.http.HttpMethod
 import io.perfometer.http.HttpRequest
-import io.perfometer.http.HttpResponse
 import io.perfometer.http.client.KtorHttpClient
 import io.perfometer.internal.helper.toReadableString
 import io.perfometer.internal.helper.toUrl
@@ -20,59 +19,10 @@ import java.util.*
 sealed class HttpStep
 data class RequestStep(val request: HttpRequest) : HttpStep()
 data class PauseStep(val duration: Duration) : HttpStep()
+data class ParallelStep(val action: suspend () -> Unit) : HttpStep()
 
 typealias HttpHeader = Pair<String, String>
 typealias HttpParam = Pair<String, String>
-
-class RequestDsl(
-    private val url: URL,
-    private val method: HttpMethod,
-    initialHeaders: Map<String, String>
-) {
-    private var name: String? = null
-    private var path: String = ""
-    private val headers = initialHeaders.toMutableMap()
-    private val params = mutableListOf<HttpParam>()
-    private var body: ByteArray = ByteArray(0)
-    private var consumer: (HttpResponse) -> Unit = {}
-
-    fun name(name: String) {
-        this.name = name
-    }
-
-    fun path(path: String) {
-        this.path = path
-    }
-
-    fun body(body: ByteArray) {
-        this.body = body
-    }
-
-    fun headers(vararg headers: HttpHeader) {
-        this.headers.putAll(headers)
-    }
-
-    fun params(vararg params: HttpParam) {
-        this.params.addAll(params)
-    }
-
-    fun consume(consumer: (HttpResponse) -> Unit) {
-        this.consumer = consumer
-    }
-
-    private fun pathWithParams(): String {
-        return path + paramsToString()
-    }
-
-    private fun paramsToString(): String {
-        return if (this.params.isNotEmpty())
-            this.params.joinToString("&", "?") { "${it.first}=${it.second}" }
-        else ""
-    }
-
-    fun build() =
-        HttpRequest(name ?: "$method $path", method, url, pathWithParams(), headers, body, consumer)
-}
 
 class HttpDsl(
     private val baseURL: URL,
@@ -84,14 +34,16 @@ class HttpDsl(
         this.headers.putAll(headers)
     }
 
-    private suspend fun request(
-        httpMethod: HttpMethod,
-        urlString: String?,
-        builder: RequestDsl.() -> Unit
+    fun basicAuth(user: String, password: String) {
+        val credentialsEncoded = Base64.getEncoder().encodeToString("$user:$password".toByteArray())
+        headers(HttpHeaders.AUTHORIZATION to "Basic $credentialsEncoded")
+    }
+
+    suspend fun parallel(
+        builder: suspend HttpDsl.() -> Unit,
     ) {
-        val requestUrl = urlString?.toUrl() ?: baseURL
-        val request = RequestDsl(requestUrl, httpMethod, headers).apply(builder).build()
-        scenarioRunner.runStep(RequestStep(request))
+        val dsl = HttpDsl(baseURL, scenarioRunner)
+        scenarioRunner.runStep(ParallelStep { builder(dsl) })
     }
 
     suspend fun get(urlString: String? = null, builder: RequestDsl.() -> Unit) =
@@ -109,13 +61,18 @@ class HttpDsl(
     suspend fun patch(urlString: String? = null, builder: RequestDsl.() -> Unit) =
         request(HttpMethod.PATCH, urlString, builder)
 
-    fun basicAuth(user: String, password: String) {
-        val credentialsEncoded = Base64.getEncoder().encodeToString("$user:$password".toByteArray())
-        headers(HttpHeaders.AUTHORIZATION to "Basic $credentialsEncoded")
-    }
-
     suspend fun pause(duration: Duration) {
         scenarioRunner.runStep(PauseStep(duration))
+    }
+
+    private suspend fun request(
+        httpMethod: HttpMethod,
+        urlString: String?,
+        builder: RequestDsl.() -> Unit
+    ) {
+        val requestUrl = urlString?.toUrl() ?: baseURL
+        val request = RequestDsl(headers, requestUrl, httpMethod).apply(builder).build()
+        scenarioRunner.runStep(RequestStep(request))
     }
 }
 

@@ -22,7 +22,11 @@ internal class HttpDslSpecification {
 
         val steps = mutableListOf<HttpStep>()
 
-        override fun runUsers(userCount: Int, duration: Duration, action: suspend () -> Unit): ScenarioSummary {
+        override fun runUsers(
+            userCount: Int,
+            duration: Duration,
+            action: suspend () -> Unit
+        ): ScenarioSummary {
             runBlocking { action() }
             return statistics.finish()
         }
@@ -59,8 +63,10 @@ internal class HttpDslSpecification {
             }
             get {
                 path("/path")
-                params("foo" to "bar",
-                        "bar" to "baz")
+                params(
+                    "foo" to "bar",
+                    "bar" to "baz"
+                )
             }
         }.runner(runner).run(1, Duration.ZERO)
 
@@ -136,9 +142,9 @@ internal class HttpDslSpecification {
         }.runner(runner).run(1, Duration.ZERO)
 
         val securedRequestsCount = runner.steps.filterIsInstance<RequestStep>()
-                .flatMap { it.request.headers.entries }
-                .filter { header -> header.key == HttpHeaders.AUTHORIZATION && header.value == "Basic $credentialsEncoded" }
-                .count()
+            .flatMap { it.request.headers.entries }
+            .filter { header -> header.key == HttpHeaders.AUTHORIZATION && header.value == "Basic $credentialsEncoded" }
+            .count()
         securedRequestsCount shouldBe runner.steps.size
     }
 
@@ -161,9 +167,9 @@ internal class HttpDslSpecification {
         }.runner(runner).run(1, Duration.ZERO)
 
         val requestsCount = runner.steps.filterIsInstance<RequestStep>()
-                .flatMap { it.request.headers.entries }
-                .filter { header -> header.key == name && header.value == value }
-                .count()
+            .flatMap { it.request.headers.entries }
+            .filter { header -> header.key == name && header.value == value }
+            .count()
         requestsCount shouldBe runner.steps.size
     }
 
@@ -208,7 +214,7 @@ internal class HttpDslSpecification {
         }.runner(runner).run(1, Duration.ZERO);
 
         val headers = runner.steps.filterIsInstance<RequestStep>()
-                .flatMap { it.request.headers.entries }
+            .flatMap { it.request.headers.entries }
         headers.size shouldBe 1
         headers[0].key shouldBe "Accept"
         headers[0].value shouldBe "application/json"
@@ -218,13 +224,15 @@ internal class HttpDslSpecification {
     fun `should add multiple headers to request`() {
         scenario("https://perfometer.io") {
             get {
-                headers("User-Agent" to "perfometer",
-                        "Accept" to "application/json")
+                headers(
+                    "User-Agent" to "perfometer",
+                    "Accept" to "application/json"
+                )
             }
         }.runner(runner).run(1, Duration.ZERO)
 
         val headers = runner.steps.filterIsInstance<RequestStep>()
-                .flatMap { it.request.headers.entries }
+            .flatMap { it.request.headers.entries }
         headers.size shouldBe 2
     }
 
@@ -242,5 +250,32 @@ internal class HttpDslSpecification {
             }
             else -> fail("Expected RequestStep")
         }
+    }
+
+    @Test
+    fun `should be able to run create parallel requests`() {
+        // given
+        val scenario = scenario("http://perfometer.io") {
+            get {
+                path("/")
+                name("not parallel")
+            }
+            parallel {
+                get {
+                    path("/foo")
+                    name("parallel indeed")
+                }
+            }
+            get {
+                path("/bar")
+                name("not parallel")
+            }
+        }
+
+        // when
+        scenario.runner(runner).run(userCount = 1, duration = Duration.ZERO)
+
+        // then should count parallel as single step
+        runner.steps.size shouldBe 3
     }
 }

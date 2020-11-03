@@ -10,6 +10,7 @@ import java.time.Duration
 import java.util.concurrent.ThreadLocalRandom
 import kotlin.properties.Delegates
 import kotlin.test.Test
+import kotlin.test.assertTrue
 
 class IntegrationSpecification : BaseIntegrationSpecification() {
 
@@ -17,35 +18,36 @@ class IntegrationSpecification : BaseIntegrationSpecification() {
     fun `should properly run scenario with request to real server`() {
         scenario("http://localhost:${port}") {
             var id by Delegates.notNull<Int>()
-            val string = "string with random number: ${ThreadLocalRandom.current().nextInt() % 100}"
+            val strings =
+                "strings with random number: ${ThreadLocalRandom.current().nextInt() % 100}"
 
             post {
-                path("/string")
-                body(string.toByteArray())
+                path("/strings")
+                body(strings.toByteArray())
                 consume {
                     it.headers shouldContain (HttpHeaders.CONTENT_TYPE to "text/plain; charset=UTF-8")
                     id = it.asString().toInt()
                 }
             }
             get {
-                name("GET /string/:id")
-                path("/string/${id}")
+                name("GET /strings/:id")
+                path("/strings/${id}")
                 consume {
                     it.headers shouldContain (HttpHeaders.CONTENT_TYPE to "text/plain; charset=UTF-8")
-                    it.asString() shouldBe string
+                    it.asString() shouldBe strings
                 }
             }
             put {
-                name("PUT /string/:id")
-                path("/string/${id}")
-                body("just a string".toByteArray())
+                name("PUT /strings/:id")
+                path("/strings/${id}")
+                body("just a strings".toByteArray())
             }
             get {
-                name("GET /string/:id")
-                path("/string/${id}")
+                name("GET /strings/:id")
+                path("/strings/${id}")
                 consume {
                     it.headers shouldContain (HttpHeaders.CONTENT_TYPE to "text/plain; charset=UTF-8")
-                    it.asString() shouldBe "just a string"
+                    it.asString() shouldBe "just a strings"
                 }
             }
         }.run(100, Duration.ofSeconds(1))
@@ -56,7 +58,10 @@ class IntegrationSpecification : BaseIntegrationSpecification() {
     @Test
     fun `should use data from CSV file`() {
         val strings = data<CsvString> {
-            fromCsv(CsvString::class, this@IntegrationSpecification::class.java.getResource("strings.csv").path)
+            fromCsv(
+                CsvString::class,
+                this@IntegrationSpecification::class.java.getResource("strings.csv").path
+            )
             random()
         }
 
@@ -64,7 +69,7 @@ class IntegrationSpecification : BaseIntegrationSpecification() {
             var id by Delegates.notNull<Int>()
 
             post {
-                path("/string")
+                path("/strings")
                 body(strings.next().text.toByteArray())
                 consume {
                     it.headers shouldContain (HttpHeaders.CONTENT_TYPE to "text/plain; charset=UTF-8")
@@ -72,8 +77,8 @@ class IntegrationSpecification : BaseIntegrationSpecification() {
                 }
             }
             get {
-                name("GET /string/:id")
-                path("/string/${id}")
+                name("GET /strings/:id")
+                path("/strings/${id}")
                 consume {
                     it.headers shouldContain (HttpHeaders.CONTENT_TYPE to "text/plain; charset=UTF-8")
                     it.asString() shouldStartWith "text "
@@ -81,4 +86,22 @@ class IntegrationSpecification : BaseIntegrationSpecification() {
             }
         }.run(100, Duration.ofSeconds(1))
     }
+
+    @Test
+    fun `should run parallel requests on coroutines executor`() {
+        val summary = scenario("http://localhost:${port}") {
+            get { path("/strings") }
+            parallel {
+                post {
+                    name("async")
+                    path("/strings")
+                    body("body".toByteArray())
+                }
+            }
+            pause(Duration.ofMillis(100))
+        }.run(10, Duration.ofMillis(500))
+
+        assertTrue { summary.summaries.any { s -> s.name == "async" } }
+    }
+
 }
