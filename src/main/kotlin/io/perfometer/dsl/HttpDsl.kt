@@ -25,10 +25,16 @@ typealias HttpHeader = Pair<String, String>
 typealias HttpParam = Pair<String, String>
 
 class HttpDsl(
+    private val parallel: Boolean = false,
     private val baseURL: URL,
     private val scenarioRunner: ScenarioRunner,
 ) {
     private val headers = mutableMapOf<String, String>()
+    private val stepHandler: suspend (HttpStep) -> Unit = if (parallel) {
+        { step: HttpStep -> scenarioRunner.runStepAsync(step)  }
+    } else {
+        { step: HttpStep -> scenarioRunner.runStep(step) }
+    }
 
     fun headers(vararg headers: HttpHeader) {
         this.headers.putAll(headers)
@@ -42,7 +48,7 @@ class HttpDsl(
     suspend fun parallel(
         builder: suspend HttpDsl.() -> Unit,
     ) {
-        val dsl = HttpDsl(baseURL, scenarioRunner)
+        val dsl = HttpDsl(true, baseURL, scenarioRunner)
         scenarioRunner.runStep(ParallelStep { builder(dsl) })
     }
 
@@ -62,7 +68,7 @@ class HttpDsl(
         request(HttpMethod.PATCH, urlString, builder)
 
     suspend fun pause(duration: Duration) {
-        scenarioRunner.runStep(PauseStep(duration))
+        stepHandler(PauseStep(duration))
     }
 
     private suspend fun request(
@@ -72,7 +78,7 @@ class HttpDsl(
     ) {
         val requestUrl = urlString?.toUrl() ?: baseURL
         val request = RequestDsl(headers, requestUrl, httpMethod).apply(builder).build()
-        scenarioRunner.runStep(RequestStep(request))
+        stepHandler(RequestStep(request))
     }
 }
 
@@ -94,8 +100,9 @@ class Scenario(
         vararg outputTo: Output = arrayOf(STDOUT)
     ): ScenarioSummary {
         println("Running scenario for $userCount users and ${duration.toReadableString()} time")
+        val dsl = HttpDsl(parallel = false, baseURL = baseURL, scenarioRunner = runner)
         return runner
-            .runUsers(userCount, duration) { builder(HttpDsl(baseURL, runner)) }
+            .runUsers(userCount, duration) { builder(dsl) }
             .also { consumeStatistics(it, *outputTo) }
     }
 }

@@ -21,6 +21,7 @@ internal class HttpDslSpecification {
         val statistics = ConcurrentQueueScenarioStatistics(Instant.now())
 
         val steps = mutableListOf<HttpStep>()
+        val asyncSteps = mutableListOf<HttpStep>()
 
         override fun runUsers(
             userCount: Int,
@@ -33,6 +34,11 @@ internal class HttpDslSpecification {
 
         override suspend fun runStep(step: HttpStep) {
             steps.add(step)
+            if (step is ParallelStep) step.action()
+        }
+
+        override suspend fun runStepAsync(step: HttpStep) {
+            asyncSteps.add(step)
         }
     }
 
@@ -277,5 +283,6 @@ internal class HttpDslSpecification {
 
         // then should count parallel as single step
         runner.steps.size shouldBe 3
+        runner.asyncSteps.size shouldBe 1
     }
 }

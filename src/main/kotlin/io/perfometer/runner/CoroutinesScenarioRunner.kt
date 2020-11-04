@@ -36,7 +36,7 @@ internal class CoroutinesScenarioRunner(
         }
         return runBlocking(Dispatchers.Default) {
             withTimeoutOrNull(duration.toKotlinDuration()) {
-                awaitAll(*parallelJobs.toTypedArray())
+                parallelJobs.filter { it.isActive }.forEach { it.cancel("Timed out") }
             }
             statistics.finish()
         }
@@ -50,12 +50,16 @@ internal class CoroutinesScenarioRunner(
         }
     }
 
-    private suspend fun runParallel(step: ParallelStep) {
+    override suspend fun runStepAsync(step: HttpStep) {
         GlobalScope.launch {
             parallelJobs.add(async {
-                step.action()
+                runStep(step)
             })
         }
+    }
+
+    private suspend fun runParallel(step: ParallelStep) {
+        step.action()
     }
 
     private suspend fun pauseFor(duration: Duration) {

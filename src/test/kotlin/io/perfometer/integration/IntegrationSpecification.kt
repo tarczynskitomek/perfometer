@@ -6,6 +6,10 @@ import io.kotest.matchers.string.shouldStartWith
 import io.perfometer.dsl.data
 import io.perfometer.dsl.scenario
 import io.perfometer.http.HttpHeaders
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.time.Duration
 import java.util.concurrent.ThreadLocalRandom
 import kotlin.properties.Delegates
@@ -93,15 +97,20 @@ class IntegrationSpecification : BaseIntegrationSpecification() {
             get { path("/strings") }
             parallel {
                 post {
-                    name("async")
+                    name("async-post")
                     path("/strings")
                     body("body".toByteArray())
                 }
+                get {
+                    name("async-get")
+                    path("/strings")
+                }
+                pause(Duration.ofMillis(100))
             }
-            pause(Duration.ofMillis(100))
         }.run(10, Duration.ofMillis(500))
 
-        assertTrue { summary.summaries.any { s -> s.name == "async" } }
+        assertTrue { summary.summaries.any { s -> s.name == "async-post" } }
+        assertTrue { summary.summaries.any { s -> s.name == "async-get" } }
     }
 
 }
