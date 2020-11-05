@@ -17,7 +17,7 @@ internal class CoroutinesScenarioRunner(
     httpClient: HttpClient,
 ) : BaseScenarioRunner(httpClient) {
 
-    private val parallelJobs = ConcurrentLinkedDeque<Deferred<Unit>>()
+    private val parallelJobs = ConcurrentLinkedDeque<Job>()
 
     @ExperimentalTime
     override fun runUsers(
@@ -34,12 +34,7 @@ internal class CoroutinesScenarioRunner(
                 }
             }
         }
-        return runBlocking(Dispatchers.Default) {
-            withTimeoutOrNull(duration.toKotlinDuration()) {
-                parallelJobs.filter { it.isActive }.forEach { it.cancel("Timed out") }
-            }
-            statistics.finish()
-        }
+        return statistics.finish()
     }
 
     override suspend fun runStep(step: HttpStep) {
@@ -51,15 +46,12 @@ internal class CoroutinesScenarioRunner(
     }
 
     override suspend fun runStepAsync(step: HttpStep) {
-        GlobalScope.launch {
-            parallelJobs.add(async {
-                runStep(step)
-            })
-        }
+        parallelJobs.add(GlobalScope.launch { runStep(step) })
     }
 
     private suspend fun runParallel(step: ParallelStep) {
         step.action()
+        parallelJobs.joinAll().also { parallelJobs.clear() }
     }
 
     private suspend fun pauseFor(duration: Duration) {

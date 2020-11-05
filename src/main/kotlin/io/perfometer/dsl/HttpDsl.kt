@@ -25,7 +25,7 @@ typealias HttpHeader = Pair<String, String>
 typealias HttpParam = Pair<String, String>
 
 class HttpDsl(
-    private val parallel: Boolean = false,
+    parallel: Boolean = false,
     private val baseURL: URL,
     private val scenarioRunner: ScenarioRunner,
 ) {
@@ -67,9 +67,9 @@ class HttpDsl(
     suspend fun patch(urlString: String? = null, builder: RequestDsl.() -> Unit) =
         request(HttpMethod.PATCH, urlString, builder)
 
-    suspend fun pause(duration: Duration) {
-        stepHandler(PauseStep(duration))
-    }
+    suspend fun pause(duration: Duration) = stepHandler(PauseStep(duration))
+
+    suspend fun pauseSeconds(value: Long) = pause(Duration.ofSeconds(value))
 
     private suspend fun request(
         httpMethod: HttpMethod,

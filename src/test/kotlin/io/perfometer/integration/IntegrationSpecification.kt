@@ -6,10 +6,6 @@ import io.kotest.matchers.string.shouldStartWith
 import io.perfometer.dsl.data
 import io.perfometer.dsl.scenario
 import io.perfometer.http.HttpHeaders
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.time.Duration
 import java.util.concurrent.ThreadLocalRandom
 import kotlin.properties.Delegates
@@ -96,6 +92,7 @@ class IntegrationSpecification : BaseIntegrationSpecification() {
         val summary = scenario("http://localhost:${port}") {
             get { path("/strings") }
             parallel {
+                pause(Duration.ofMinutes(1))
                 post {
                     name("async-post")
                     path("/strings")
@@ -105,12 +102,24 @@ class IntegrationSpecification : BaseIntegrationSpecification() {
                     name("async-get")
                     path("/strings")
                 }
-                pause(Duration.ofMillis(100))
             }
-        }.run(10, Duration.ofMillis(500))
+        }.run(10, Duration.ofSeconds(1))
 
         assertTrue { summary.summaries.any { s -> s.name == "async-post" } }
         assertTrue { summary.summaries.any { s -> s.name == "async-get" } }
+    }
+
+    @Test
+    fun `should not run request declared after parallel block, before all the parallel jobs complete`() {
+        val summary = scenario("http://localhost:${port}") {
+            get { path("/strings") }
+            parallel {
+                pause(Duration.ofSeconds(10))
+            }
+            get { name("should-never-run") }
+        }.run(10, Duration.ofSeconds(1))
+
+        assertTrue { summary.summaries.none { it.name == "should-never-run" } }
     }
 
 }
