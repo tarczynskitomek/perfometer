@@ -6,10 +6,14 @@ import io.kotest.matchers.string.shouldStartWith
 import io.perfometer.dsl.data
 import io.perfometer.dsl.scenario
 import io.perfometer.http.HttpHeaders
+import io.perfometer.http.client.KtorHttpClient
+import io.perfometer.runner.CoroutinesScenarioRunner
+import io.perfometer.runner.ThreadPoolScenarioRunner
 import java.time.Duration
 import java.util.concurrent.ThreadLocalRandom
 import kotlin.properties.Delegates
 import kotlin.test.Test
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class IntegrationSpecification : BaseIntegrationSpecification() {
@@ -89,37 +93,79 @@ class IntegrationSpecification : BaseIntegrationSpecification() {
 
     @Test
     fun `should run parallel requests on coroutines executor`() {
-        val summary = scenario("http://localhost:${port}") {
-            get { path("/strings") }
-            parallel {
-                pause(Duration.ofMinutes(1))
-                post {
-                    name("async-post")
-                    path("/strings")
-                    body("body".toByteArray())
+        val httpClient = KtorHttpClient()
+        listOf(
+            CoroutinesScenarioRunner(httpClient),
+            ThreadPoolScenarioRunner(httpClient),
+        ).forEach { runner ->
+            var body: String? = null
+            val summary = scenario("http://localhost:${port}") {
+                get { path("/strings") }
+                parallel {
+                    pause(Duration.ofMinutes(1))
+                    post {
+                        name("async-post")
+                        path("/strings")
+                        body("body".toByteArray())
+                        consume {
+                            body = it.asString()
+                        }
+                    }
+                    get {
+                        name("async-get")
+                        path("/strings")
+                    }
                 }
-                get {
-                    name("async-get")
-                    path("/strings")
-                }
-            }
-        }.run(10, Duration.ofSeconds(1))
+            }.runner(runner).run(10, Duration.ofSeconds(1))
 
-        assertTrue { summary.summaries.any { s -> s.name == "async-post" } }
-        assertTrue { summary.summaries.any { s -> s.name == "async-get" } }
+            assertNotNull(body)
+            assertTrue { summary.summaries.any { s -> s.name == "async-post" } }
+            assertTrue { summary.summaries.any { s -> s.name == "async-get" } }
+        }
+
     }
 
     @Test
     fun `should not run request declared after parallel block, before all the parallel jobs complete`() {
-        val summary = scenario("http://localhost:${port}") {
-            get { path("/strings") }
-            parallel {
-                pause(Duration.ofSeconds(10))
-            }
-            get { name("should-never-run") }
-        }.run(10, Duration.ofSeconds(1))
+        val httpClient = KtorHttpClient()
+        listOf(
+            CoroutinesScenarioRunner(httpClient),
+            ThreadPoolScenarioRunner(httpClient),
+        ).forEach { runner ->
+            val summary = scenario("http://localhost:${port}") {
+                get { path("/strings") }
+                parallel {
+                    pause(Duration.ofSeconds(10))
+                }
+                get { name("should-never-run") }
+            }.runner(runner).run(10, Duration.ofSeconds(1))
+            assertTrue { summary.summaries.none { it.name == "should-never-run" } }
+        }
+    }
 
-        assertTrue { summary.summaries.none { it.name == "should-never-run" } }
+    @Test
+    fun `should run multiple parallel blocks`() {
+        val httpClient = KtorHttpClient()
+        listOf(
+            CoroutinesScenarioRunner(httpClient),
+            ThreadPoolScenarioRunner(httpClient),
+        ).forEach { runner ->
+            val summary = scenario("http://localhost:${port}") {
+                parallel {
+                    pause(Duration.ofMillis(200))
+                    get { name("first") }
+                }
+                parallel {
+                    pause(Duration.ofSeconds(1))
+                    get { name("second") }
+                }
+                get { name("should-never-run") }
+            }.runner(runner).run(10, Duration.ofSeconds(1))
+
+            assertTrue { summary.summaries.none { it.name == "should-never-run" } }
+            assertTrue { summary.summaries.any { it.name == "first" } }
+            assertTrue { summary.summaries.any { it.name == "second" } }
+        }
     }
 
 }

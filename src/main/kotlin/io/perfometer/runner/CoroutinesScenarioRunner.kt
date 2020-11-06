@@ -17,6 +17,7 @@ internal class CoroutinesScenarioRunner(
     httpClient: HttpClient,
 ) : BaseScenarioRunner(httpClient) {
 
+    // todo @ttarczynski - consider moving this to a separate class
     private val parallelJobs = ConcurrentLinkedDeque<Job>()
 
     @ExperimentalTime
