@@ -1,9 +1,6 @@
 package io.perfometer.runner
 
-import io.perfometer.dsl.HttpStep
-import io.perfometer.dsl.ParallelStep
-import io.perfometer.dsl.PauseStep
-import io.perfometer.dsl.RequestStep
+import io.perfometer.dsl.*
 import io.perfometer.http.client.HttpClient
 import io.perfometer.internal.helper.decorateInterruptable
 import io.perfometer.internal.helper.decorateSuspendingInterruptable
@@ -17,8 +14,7 @@ internal class ThreadPoolScenarioRunner(
     httpClient: HttpClient,
 ) : BaseScenarioRunner(httpClient) {
 
-    // todo @ttarczynski - consider moving this to a separate class
-    private val parallelJobs = ConcurrentLinkedDeque<CompletableFuture<Void>>()
+    private val parallelJobs = ThreadLocal.withInitial { ConcurrentLinkedDeque<CompletableFuture<Void>>() }
     private val parallelJobsExecutor: ExecutorService = Executors.newCachedThreadPool()
 
     override fun runUsers(
@@ -44,7 +40,7 @@ internal class ThreadPoolScenarioRunner(
     }
 
     override suspend fun runStepAsync(step: HttpStep) {
-        parallelJobs.add(
+        parallelJobs.get().add(
             CompletableFuture.runAsync(
                 { runBlocking { runStep(step) } }, parallelJobsExecutor
             )
@@ -76,7 +72,7 @@ internal class ThreadPoolScenarioRunner(
         runBlocking {
             step.action()
         }
-        CompletableFuture.allOf(*parallelJobs.toTypedArray()).join()
+        CompletableFuture.allOf(*parallelJobs.get().toTypedArray()).join()
     }
 
     private fun runAction(action: suspend () -> Unit) = decorateInterruptable {
@@ -87,7 +83,7 @@ internal class ThreadPoolScenarioRunner(
         }
     }
 
-    private fun pauseFor(duration: Duration) = decorateInterruptable {
+    private fun pauseFor(duration: Duration) {
         Thread.sleep(duration.toMillis())
         statistics.gather(PauseStatistics(duration))
     }

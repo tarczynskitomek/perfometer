@@ -1,15 +1,13 @@
 package io.perfometer.runner
 
-import io.perfometer.dsl.HttpStep
-import io.perfometer.dsl.ParallelStep
-import io.perfometer.dsl.PauseStep
-import io.perfometer.dsl.RequestStep
+import io.perfometer.dsl.*
 import io.perfometer.http.client.HttpClient
 import io.perfometer.statistics.PauseStatistics
 import io.perfometer.statistics.ScenarioSummary
 import kotlinx.coroutines.*
 import java.time.Duration
 import java.util.concurrent.ConcurrentLinkedDeque
+import kotlin.coroutines.*
 import kotlin.time.ExperimentalTime
 import kotlin.time.toKotlinDuration
 
@@ -17,8 +15,7 @@ internal class CoroutinesScenarioRunner(
     httpClient: HttpClient,
 ) : BaseScenarioRunner(httpClient) {
 
-    // todo @ttarczynski - consider moving this to a separate class
-    private val parallelJobs = ConcurrentLinkedDeque<Job>()
+    private lateinit var duration: Duration
 
     @ExperimentalTime
     override fun runUsers(
@@ -26,9 +23,10 @@ internal class CoroutinesScenarioRunner(
         duration: Duration,
         action: suspend () -> Unit,
     ): ScenarioSummary {
+        this.duration = duration
         runBlocking(Dispatchers.Default) {
             (1..userCount).map {
-                launch {
+                launch(CoroutineParallelJobs()) {
                     withTimeout(duration.toKotlinDuration()) {
                         while (isActive) action()
                     }
@@ -38,6 +36,7 @@ internal class CoroutinesScenarioRunner(
         return statistics.finish()
     }
 
+    @ExperimentalTime
     override suspend fun runStep(step: HttpStep) {
         when (step) {
             is RequestStep -> executeHttp(step)
@@ -46,17 +45,34 @@ internal class CoroutinesScenarioRunner(
         }
     }
 
+    @ExperimentalTime
     override suspend fun runStepAsync(step: HttpStep) {
-        parallelJobs.add(GlobalScope.launch { runStep(step) })
+        parallelJobs().add(GlobalScope.launch {
+            runStep(step)
+        })
     }
 
+    @ExperimentalTime
     private suspend fun runParallel(step: ParallelStep) {
-        step.action()
-        parallelJobs.joinAll().also { parallelJobs.clear() }
+        withTimeoutOrNull(duration.toKotlinDuration()) {
+            step.action()
+            parallelJobs().joinAll()
+        }
     }
 
     private suspend fun pauseFor(duration: Duration) {
         delay(duration.toMillis())
         statistics.gather(PauseStatistics(duration))
     }
+
+    private suspend fun parallelJobs(): ConcurrentLinkedDeque<Job> {
+        return coroutineContext[CoroutineParallelJobs.Key]?.jobs ?: throw IllegalStateException()
+    }
+
+    private data class CoroutineParallelJobs(
+        val jobs: ConcurrentLinkedDeque<Job> = ConcurrentLinkedDeque<Job>()
+    ) : AbstractCoroutineContextElement(CoroutineParallelJobs) {
+        companion object Key : CoroutineContext.Key<CoroutineParallelJobs>
+    }
+
 }
